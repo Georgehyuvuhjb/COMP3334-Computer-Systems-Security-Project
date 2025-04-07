@@ -7,6 +7,13 @@ import sys
 import getpass # For hidden password input
 import traceback
 
+import base64
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+
+
 # ==================================================
 # Section: Configuration (原本在 config_client.py)
 # ==================================================
@@ -147,28 +154,92 @@ def load_or_generate_key():
 SECRET_KEY = None
 load_or_generate_key() # Load or generate key on script start
 
+# def encrypt_chunk(chunk):
+#     """Encrypts a chunk of data. Placeholder."""
+#     if not SECRET_KEY: raise ValueError("Encryption key not available.")
+#     if chunk is None: return None
+#     # TODO: Implement actual AES (GCM recommended) encryption here.
+#     # Remember IV handling, potential padding, and GCM tags.
+#     # print("[DEBUG Encrypt] Plaintext chunk size:", len(chunk))
+#     encrypted_chunk = chunk # Placeholder: No encryption
+#     # print("[DEBUG Encrypt] Ciphertext chunk size:", len(encrypted_chunk))
+#     return encrypted_chunk
+
+# def decrypt_chunk(encrypted_chunk):
+#     """Decrypts a chunk of data. Placeholder."""
+#     if not SECRET_KEY: raise ValueError("Decryption key not available.")
+#     if encrypted_chunk is None: return None
+#     # TODO: Implement actual AES (GCM recommended) decryption here.
+#     # Remember IV handling, GCM tag verification, padding removal.
+#     # print("[DEBUG Decrypt] Ciphertext chunk size:", len(encrypted_chunk))
+#     decrypted_chunk = encrypted_chunk # Placeholder: No decryption
+#     # print("[DEBUG Decrypt] Plaintext chunk size:", len(decrypted_chunk))
+#     return decrypted_chunk
+
 def encrypt_chunk(chunk):
-    """Encrypts a chunk of data. Placeholder."""
+    """
+    Encrypts a chunk of data using AES-GCM.
+    Returns: a byte string containing IV + ciphertext + tag
+    """
     if not SECRET_KEY: raise ValueError("Encryption key not available.")
     if chunk is None: return None
-    # TODO: Implement actual AES (GCM recommended) encryption here.
-    # Remember IV handling, potential padding, and GCM tags.
-    # print("[DEBUG Encrypt] Plaintext chunk size:", len(chunk))
-    encrypted_chunk = chunk # Placeholder: No encryption
-    # print("[DEBUG Encrypt] Ciphertext chunk size:", len(encrypted_chunk))
-    return encrypted_chunk
+    
+    try:
+        # Generate a random 96-bit IV (12 bytes) for each chunk
+        # Using a unique IV for each chunk is critical for security
+        iv = os.urandom(12)
+        
+        # Create an AES-GCM cipher instance
+        aesgcm = AESGCM(SECRET_KEY)
+        
+        # Encrypt the chunk - GCM automatically includes authentication tag
+        # None parameter is for Associated Data - not using any here
+        ciphertext = aesgcm.encrypt(iv, chunk, None)
+        
+        # Return IV + ciphertext (tag is included in ciphertext by the API)
+        encrypted_chunk = iv + ciphertext
+        
+        # Debug info if needed
+        # print(f"[DEBUG Encrypt] Plaintext size: {len(chunk)}, Ciphertext size: {len(encrypted_chunk)}")
+        
+        return encrypted_chunk
+    except Exception as e:
+        print(f"Encryption error: {e}")
+        return None
 
 def decrypt_chunk(encrypted_chunk):
-    """Decrypts a chunk of data. Placeholder."""
+    """
+    Decrypts a chunk of data using AES-GCM.
+    Expects: IV (12 bytes) + ciphertext + tag
+    """
     if not SECRET_KEY: raise ValueError("Decryption key not available.")
     if encrypted_chunk is None: return None
-    # TODO: Implement actual AES (GCM recommended) decryption here.
-    # Remember IV handling, GCM tag verification, padding removal.
-    # print("[DEBUG Decrypt] Ciphertext chunk size:", len(encrypted_chunk))
-    decrypted_chunk = encrypted_chunk # Placeholder: No decryption
-    # print("[DEBUG Decrypt] Plaintext chunk size:", len(decrypted_chunk))
-    return decrypted_chunk
-
+    
+    try:
+        # Ensure we have at least an IV
+        if len(encrypted_chunk) <= 12:
+            print("ERROR: Encrypted chunk too small, missing IV or content")
+            return None
+            
+        # Extract IV and ciphertext
+        iv = encrypted_chunk[:12]
+        ciphertext = encrypted_chunk[12:]
+        
+        # Create an AES-GCM cipher instance
+        aesgcm = AESGCM(SECRET_KEY)
+        
+        # Decrypt and verify authentication
+        # If authentication fails (tampered data), this will raise an exception
+        decrypted_chunk = aesgcm.decrypt(iv, ciphertext, None)
+        
+        # Debug info if needed
+        # print(f"[DEBUG Decrypt] Ciphertext size: {len(encrypted_chunk)}, Plaintext size: {len(decrypted_chunk)}")
+        
+        return decrypted_chunk
+    except Exception as e:
+        print(f"Decryption error (possibly tampered data): {e}")
+        return None
+    
 def encrypt_file_stream(filepath, chunk_size):
     """Generator that reads, encrypts, and yields file chunks."""
     if not SECRET_KEY:
@@ -498,6 +569,68 @@ def do_list_files():
         # else: receive_response handles errors/disconnect
     return files
 
+# def do_upload_file(filepath):
+#     """Handles uploading a file."""
+#     if not logged_in_user or not current_connection:
+#         print("Please log in first.")
+#         return False
+#     if not os.path.exists(filepath) or not os.path.isfile(filepath):
+#         print(f"ERROR: File not found or is not a file: {filepath}")
+#         return False
+
+#     filename = os.path.basename(filepath)
+#     print(f"Preparing to upload '{filename}'...")
+
+#     # 1. Send upload request
+#     request = {"action": "upload_request", "username": logged_in_user, "filename": filename} # TODO: Send token
+#     if not send_request(current_connection, request): return False
+
+#     response = receive_response(current_connection)
+#     if not response or not response.get("success"):
+#         print(f"Server rejected upload: {response.get('message', 'Unknown error') if response else 'Connection error'}")
+#         return False
+
+#     print(f"Server ready. Encrypting and uploading...")
+
+#     # 2. Get encrypted stream generator
+#     # TODO: Adjust chunk size based on crypto overhead if necessary
+#     encrypted_stream_gen = encrypt_file_stream(filepath, BUFFER_SIZE - 64) # Leave some room
+
+#     if encrypted_stream_gen is None:
+#          print("ERROR: Failed to initialize encryption stream.")
+#          # TODO: Need to inform server upload is cancelled? Current protocol doesn't support this well. Maybe just disconnect.
+#          disconnect_from_server()
+#          return False
+
+#     # 3. Send the file stream
+#     # TODO: FIX THE FILESIZE SENDING PROBLEM. The current network code might not work correctly
+#     # because send_file_stream doesn't send the size first, but receive_file_content expects it.
+#     # This needs a protocol adjustment or client-side size calculation of encrypted data.
+#     print("WARNING: Filesize handling in current protocol for upload is flawed!")
+
+#     # --- Temporary measure: Let's try sending original filesize ---
+#     # --- Server's receive_file_content MUST be aware this is original size ---
+#     original_filesize = os.path.getsize(filepath)
+#     try:
+#          print(f"Sending original filesize: {original_filesize}")
+#          current_connection.sendall(struct.pack('>Q', original_filesize))
+#     except socket.error as e:
+#          print(f"ERROR sending filesize: {e}")
+#          disconnect_from_server()
+#          return False
+#     # --- End temporary measure ---
+
+#     success, bytes_sent = send_file_stream(current_connection, encrypted_stream_gen)
+
+#     if success:
+#         print(f"File stream sent ({bytes_sent} encrypted bytes). Waiting for server finalization (if any)...")
+#         # Current server doesn't send a final confirmation after upload data phase.
+#     else:
+#         print("File upload failed during transfer.")
+#         # Disconnect might have already happened in send_file_stream
+
+#     return success
+
 def do_upload_file(filepath):
     """Handles uploading a file."""
     if not logged_in_user or not current_connection:
@@ -511,7 +644,7 @@ def do_upload_file(filepath):
     print(f"Preparing to upload '{filename}'...")
 
     # 1. Send upload request
-    request = {"action": "upload_request", "username": logged_in_user, "filename": filename} # TODO: Send token
+    request = {"action": "upload_request", "username": logged_in_user, "filename": filename}
     if not send_request(current_connection, request): return False
 
     response = receive_response(current_connection)
@@ -519,46 +652,66 @@ def do_upload_file(filepath):
         print(f"Server rejected upload: {response.get('message', 'Unknown error') if response else 'Connection error'}")
         return False
 
-    print(f"Server ready. Encrypting and uploading...")
+    print(f"Server ready. Encrypting and calculating encrypted size...")
 
-    # 2. Get encrypted stream generator
-    # TODO: Adjust chunk size based on crypto overhead if necessary
-    encrypted_stream_gen = encrypt_file_stream(filepath, BUFFER_SIZE - 64) # Leave some room
-
-    if encrypted_stream_gen is None:
-         print("ERROR: Failed to initialize encryption stream.")
-         # TODO: Need to inform server upload is cancelled? Current protocol doesn't support this well. Maybe just disconnect.
-         disconnect_from_server()
-         return False
-
-    # 3. Send the file stream
-    # TODO: FIX THE FILESIZE SENDING PROBLEM. The current network code might not work correctly
-    # because send_file_stream doesn't send the size first, but receive_file_content expects it.
-    # This needs a protocol adjustment or client-side size calculation of encrypted data.
-    print("WARNING: Filesize handling in current protocol for upload is flawed!")
-
-    # --- Temporary measure: Let's try sending original filesize ---
-    # --- Server's receive_file_content MUST be aware this is original size ---
-    original_filesize = os.path.getsize(filepath)
+    # 2. Pre-encrypt to calculate size (first pass)
+    temp_encrypted_chunks = []
+    chunk_size = BUFFER_SIZE - 64  # Leave room for crypto overhead
+    total_encrypted_size = 0
+    
+    # First pass - encrypt all chunks to calculate total encrypted size
+    file_reader = read_file_chunked(filepath, chunk_size)
+    if file_reader is None:
+        print("ERROR: Failed to read file.")
+        disconnect_from_server()
+        return False
+        
     try:
-         print(f"Sending original filesize: {original_filesize}")
-         current_connection.sendall(struct.pack('>Q', original_filesize))
-    except socket.error as e:
-         print(f"ERROR sending filesize: {e}")
-         disconnect_from_server()
-         return False
-    # --- End temporary measure ---
-
-    success, bytes_sent = send_file_stream(current_connection, encrypted_stream_gen)
-
-    if success:
-        print(f"File stream sent ({bytes_sent} encrypted bytes). Waiting for server finalization (if any)...")
-        # Current server doesn't send a final confirmation after upload data phase.
-    else:
-        print("File upload failed during transfer.")
-        # Disconnect might have already happened in send_file_stream
-
-    return success
+        for plain_chunk in file_reader:
+            if plain_chunk is None:
+                print("ERROR: Encountered error while reading file.")
+                disconnect_from_server()
+                return False
+                
+            encrypted_chunk = encrypt_chunk(plain_chunk)
+            if encrypted_chunk is None:
+                print("ERROR: Encryption failed for chunk.")
+                disconnect_from_server()
+                return False
+                
+            temp_encrypted_chunks.append(encrypted_chunk)
+            total_encrypted_size += len(encrypted_chunk)
+            
+        # 3. Send the correct encrypted file size
+        print(f"Sending actual encrypted filesize: {total_encrypted_size}")
+        try:
+            current_connection.sendall(struct.pack('>Q', total_encrypted_size))
+        except socket.error as e:
+            print(f"ERROR sending filesize: {e}")
+            disconnect_from_server()
+            return False
+            
+        # 4. Send pre-encrypted chunks
+        print(f"Uploading {len(temp_encrypted_chunks)} encrypted chunks...")
+        total_bytes_sent = 0
+        
+        for chunk in temp_encrypted_chunks:
+            try:
+                current_connection.sendall(chunk)
+                total_bytes_sent += len(chunk)
+            except socket.error as e:
+                print(f"ERROR sending chunk: {e}")
+                disconnect_from_server()
+                return False
+                
+        print(f"File stream sent ({total_bytes_sent} encrypted bytes). Waiting for server finalization (if any)...")
+        return True
+        
+    except Exception as e:
+        print(f"UNEXPECTED error during upload: {e}")
+        traceback.print_exc()
+        disconnect_from_server()
+        return False
 
 
 def do_download_file(file_uuid, save_dir="."):
