@@ -276,6 +276,39 @@ def encrypt_file_stream(filepath, chunk_size):
         yield None # Signal error
 
 
+# def decrypt_file_stream(encrypted_chunks_iterator):
+#     """Generator that receives encrypted chunks, decrypts, and yields plaintext."""
+#     if not SECRET_KEY:
+#         print("ERROR: Decryption key is not available.")
+#         yield None # Signal error
+#         return
+
+#     print("Starting decryption stream...")
+#     chunk_index = 0
+#     try:
+#         for encrypted_chunk in encrypted_chunks_iterator:
+#             if encrypted_chunk is None: # Network error signal
+#                 yield None
+#                 return # Stop generation
+#             # print(f"[Decrypt Stream] Received encrypted chunk {chunk_index}, size {len(encrypted_chunk)}")
+#             decrypted_chunk = decrypt_chunk(encrypted_chunk)
+#             if decrypted_chunk is None: # Decryption error (e.g., bad tag)
+#                  print(f"ERROR: Decryption failed for chunk {chunk_index}")
+#                  yield None
+#                  return # Stop generation
+#             # print(f"[Decrypt Stream] Yielding decrypted chunk {chunk_index}, size {len(decrypted_chunk)}")
+#             yield decrypted_chunk
+#             chunk_index += 1
+#         print("Finished decryption stream.")
+#     except Exception as e:
+#         print(f"UNEXPECTED error during decryption stream: {e}")
+#         traceback.print_exc()
+#         yield None # Signal error
+
+# # Add these at the module level
+# pending_encrypted_data = b''
+# expected_chunk_sizes = []
+
 def decrypt_file_stream(encrypted_chunks_iterator):
     """Generator that receives encrypted chunks, decrypts, and yields plaintext."""
     if not SECRET_KEY:
@@ -283,27 +316,120 @@ def decrypt_file_stream(encrypted_chunks_iterator):
         yield None # Signal error
         return
 
+    global pending_encrypted_data
+    pending_encrypted_data = b''  # Reset buffer at start of stream
+    
     print("Starting decryption stream...")
     chunk_index = 0
+    
     try:
-        for encrypted_chunk in encrypted_chunks_iterator:
-            if encrypted_chunk is None: # Network error signal
+        for network_chunk in encrypted_chunks_iterator:
+            if network_chunk is None:  # Network error signal
                 yield None
-                return # Stop generation
-            # print(f"[Decrypt Stream] Received encrypted chunk {chunk_index}, size {len(encrypted_chunk)}")
-            decrypted_chunk = decrypt_chunk(encrypted_chunk)
-            if decrypted_chunk is None: # Decryption error (e.g., bad tag)
-                 print(f"ERROR: Decryption failed for chunk {chunk_index}")
-                 yield None
-                 return # Stop generation
-            # print(f"[Decrypt Stream] Yielding decrypted chunk {chunk_index}, size {len(decrypted_chunk)}")
-            yield decrypted_chunk
-            chunk_index += 1
-        print("Finished decryption stream.")
+                return  # Stop generation
+                
+            # Add incoming data to our buffer
+            pending_encrypted_data += network_chunk
+            print(f"Received network chunk: {len(network_chunk)} bytes, buffer now: {len(pending_encrypted_data)} bytes")
+            
+            # Process any complete encrypted chunks in the buffer
+            while len(pending_encrypted_data) > 12:  # Need at least IV + 1 byte of data
+                # Extract the IV from the beginning of our buffer
+                iv = pending_encrypted_data[:12]
+                
+                # For small files, try the entire buffer first
+                if len(pending_encrypted_data) < 1024:  # Small files optimization
+                    try:
+                        aesgcm = AESGCM(SECRET_KEY)
+                        ciphertext = pending_encrypted_data[12:]
+                        decrypted = aesgcm.decrypt(iv, ciphertext, None)
+                        pending_encrypted_data = b''  # Clear entire buffer
+                        print(f"Decrypted small file chunk: {len(decrypted)} bytes")
+                        chunk_index += 1
+                        yield decrypted
+                        break  # Exit while loop to get more data if needed
+                    except Exception:
+                        # If decryption fails, it's not a complete chunk - continue with incremental approach
+                        pass
+                
+                # Try to find the correct chunk boundary with an incremental approach
+                success = False
+                max_test = min(len(pending_encrypted_data) - 12, 8192)  # Limit test size
+                
+                # Try multiple sizes in increments of 16 bytes (AES block size)
+                for test_length in range(16, max_test, 16):
+                    if 12 + test_length > len(pending_encrypted_data):
+                        break  # Not enough data
+                        
+                    try:
+                        # Try to decrypt a chunk of this length
+                        aesgcm = AESGCM(SECRET_KEY)
+                        ciphertext = pending_encrypted_data[12:12+test_length]
+                        decrypted = aesgcm.decrypt(iv, ciphertext, None)
+                        
+                        # If we got here, decryption succeeded
+                        pending_encrypted_data = pending_encrypted_data[12+test_length:]
+                        print(f"Successfully decrypted chunk {chunk_index} (length: {test_length})")
+                        chunk_index += 1
+                        yield decrypted
+                        success = True
+                        break
+                    except Exception:
+                        # This length wasn't right, continue trying
+                        continue
+                
+                # If we couldn't find a valid chunk, we need more data
+                if not success:
+                    print(f"Need more data to decrypt - buffer size: {len(pending_encrypted_data)} bytes")
+                    break  # Break from while loop to get more network data
+        
+        # Process any remaining data after all network chunks received
+        while len(pending_encrypted_data) > 12:
+            iv = pending_encrypted_data[:12]
+            
+            # For the last piece, try the rest of the buffer
+            try:
+                aesgcm = AESGCM(SECRET_KEY)
+                ciphertext = pending_encrypted_data[12:]
+                decrypted = aesgcm.decrypt(iv, ciphertext, None)
+                pending_encrypted_data = b''  # Clear the buffer
+                print(f"Successfully decrypted final chunk {chunk_index} (length: {len(ciphertext)})")
+                chunk_index += 1
+                yield decrypted
+                break  # Should exit as buffer is now empty
+            except Exception as e:
+                # If we can't decrypt with all remaining data, try smaller chunks
+                success = False
+                
+                # Try different sizes for the last chunk
+                for test_length in range(16, len(pending_encrypted_data) - 12, 16):
+                    try:
+                        ciphertext = pending_encrypted_data[12:12+test_length]
+                        decrypted = aesgcm.decrypt(iv, ciphertext, None)
+                        pending_encrypted_data = pending_encrypted_data[12+test_length:]
+                        print(f"Successfully decrypted remaining chunk {chunk_index} (length: {test_length})")
+                        chunk_index += 1
+                        yield decrypted
+                        success = True
+                        break
+                    except Exception:
+                        continue
+                
+                if not success:
+                    print(f"WARNING: Could not decrypt remaining {len(pending_encrypted_data)} bytes")
+                    break
+        
+        # Check if there's leftover data in the buffer
+        if pending_encrypted_data:
+            print(f"WARNING: {len(pending_encrypted_data)} bytes of encrypted data remained undecrypted")
+            if len(pending_encrypted_data) < 32:
+                print(f"Hexdump of remaining data: {pending_encrypted_data.hex()}")
+            
+        print(f"Finished decryption stream. Decrypted {chunk_index} chunks.")
     except Exception as e:
         print(f"UNEXPECTED error during decryption stream: {e}")
         traceback.print_exc()
-        yield None # Signal error
+        yield None  # Signal error
 
 # ==================================================
 # Section: Network Communication (原本在 network_client.py)
