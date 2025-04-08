@@ -119,37 +119,169 @@ def write_file_chunked(filepath, data_chunks_generator):
 # from cryptography.hazmat.backends import default_backend
 # from cryptography.exceptions import InvalidTag
 
+# def load_or_generate_key():
+#     """
+#     Loads or generates a key.
+#     TODO: THIS IS EXTREMELY INSECURE! Implement secure key derivation/storage.
+#     """
+#     # Placeholder implementation
+#     global SECRET_KEY
+#     key_len = 32 # For AES-256
+#     if os.path.exists(LOCAL_KEY_FILE):
+#         try:
+#             with open(LOCAL_KEY_FILE, 'rb') as f:
+#                 key = f.read()
+#             if len(key) == key_len:
+#                 print("Loaded existing key (INSECURE STORAGE).")
+#                 SECRET_KEY = key
+#                 return
+#             else:
+#                  print(f"Warning: Existing key file '{LOCAL_KEY_FILE}' has incorrect length. Generating new key.")
+#         except Exception as e:
+#              print(f"Warning: Could not load key from '{LOCAL_KEY_FILE}': {e}. Generating new key.")
+
+#     print(f"Generating new key and saving to '{LOCAL_KEY_FILE}' (INSECURE STORAGE).")
+#     # TODO: Ensure proper file permissions if using file storage (chmod 600)
+#     key = os.urandom(key_len)
+#     try:
+#         with open(LOCAL_KEY_FILE, 'wb') as f:
+#             f.write(key)
+#         SECRET_KEY = key
+#     except Exception as e:
+#          print(f"FATAL: Could not save generated key to '{LOCAL_KEY_FILE}': {e}")
+#          SECRET_KEY = None # Indicate key failure
+
 def load_or_generate_key():
     """
-    Loads or generates a key.
-    TODO: THIS IS EXTREMELY INSECURE! Implement secure key derivation/storage.
+    Securely derives an encryption key using a randomly generated password
+    that is stored encrypted with a platform-independent mechanism.
     """
-    # Placeholder implementation
     global SECRET_KEY
-    key_len = 32 # For AES-256
-    if os.path.exists(LOCAL_KEY_FILE):
+    key_len = 32  # For AES-256
+    salt_file = "./client_data/encryption_salt.bin"
+    protected_password_file = "./client_data/protected_password.bin"
+    master_key_file = "./client_data/master.key"  # For encrypting the password
+    iterations = 600000
+    
+    # First, get or create the master key for password encryption/decryption
+    master_key = None
+    if os.path.exists(master_key_file):
         try:
-            with open(LOCAL_KEY_FILE, 'rb') as f:
-                key = f.read()
-            if len(key) == key_len:
-                print("Loaded existing key (INSECURE STORAGE).")
-                SECRET_KEY = key
+            with open(master_key_file, 'rb') as f:
+                master_key = f.read()
+            print("Loaded existing master key.")
+        except Exception as e:
+            print(f"Warning: Could not load master key: {e}. Generating new one.")
+    
+    if not master_key or len(master_key) != 32:
+        # Generate a master key for Fernet
+        print("Generating new master key...")
+        master_key = os.urandom(32)
+        try:
+            with open(master_key_file, 'wb') as f:
+                f.write(master_key)
+            # Set secure permissions
+            if os.name == 'posix':
+                os.chmod(master_key_file, 0o600)
+        except Exception as e:
+            print(f"Warning: Could not save master key: {e}")
+    
+    # Create a Fernet instance for encryption/decryption
+    from cryptography.fernet import Fernet
+    from base64 import urlsafe_b64encode
+    
+    # Fernet requires base64-encoded 32-byte key
+    fernet_key = urlsafe_b64encode(master_key)
+    fernet = Fernet(fernet_key)
+    
+    # Check if we have a stored encrypted password
+    password = None
+    if os.path.exists(protected_password_file):
+        try:
+            with open(protected_password_file, 'rb') as f:
+                encrypted_password = f.read()
+            
+            # Decrypt the password
+            password = fernet.decrypt(encrypted_password)
+            
+            if len(password) >= 32:
+                print("Using stored secure password...")
+            else:
+                print("Stored password has insufficient length. Generating new one...")
+                password = None
+        except Exception as e:
+            print(f"Warning: Could not load or decrypt secure password: {e}. Generating new one.")
+            password = None
+    
+    # Generate a new password if needed
+    if not password:
+        password = os.urandom(48)  # 48 bytes of cryptographically secure random data
+        
+        # Save the password using Fernet encryption
+        try:
+            encrypted_password = fernet.encrypt(password)
+            with open(protected_password_file, 'wb') as f:
+                f.write(encrypted_password)
+            
+            # Set secure permissions
+            if os.name == 'posix':
+                os.chmod(protected_password_file, 0o600)
+            print("New secure password generated and stored.")
+        except Exception as e:
+            print(f"Warning: Could not save encrypted password: {e}")
+    
+    # Derive the encryption key using the password and salt
+    if os.path.exists(salt_file):
+        try:
+            with open(salt_file, 'rb') as f:
+                salt = f.read()
+            if len(salt) >= 16:  # Ensure salt is at least 16 bytes
+                print("Deriving key from existing salt...")
+                # Derive key using PBKDF2
+                kdf = PBKDF2HMAC(
+                    algorithm=hashes.SHA256(),
+                    length=key_len,
+                    salt=salt,
+                    iterations=iterations,
+                )
+                SECRET_KEY = kdf.derive(password)
                 return
             else:
-                 print(f"Warning: Existing key file '{LOCAL_KEY_FILE}' has incorrect length. Generating new key.")
+                print(f"Warning: Salt file has incorrect length. Generating new salt.")
         except Exception as e:
-             print(f"Warning: Could not load key from '{LOCAL_KEY_FILE}': {e}. Generating new key.")
-
-    print(f"Generating new key and saving to '{LOCAL_KEY_FILE}' (INSECURE STORAGE).")
-    # TODO: Ensure proper file permissions if using file storage (chmod 600)
-    key = os.urandom(key_len)
+            print(f"Warning: Could not load salt: {e}. Generating new salt.")
+    
+    # Generate new salt and derive key
+    print("Generating new encryption salt...")
+    salt = os.urandom(32)  # 32 bytes (256 bits) salt for extra security
     try:
-        with open(LOCAL_KEY_FILE, 'wb') as f:
-            f.write(key)
-        SECRET_KEY = key
+        # Save only the salt, never the key
+        with open(salt_file, 'wb') as f:
+            f.write(salt)
+        
+        # Derive key using PBKDF2
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=key_len,
+            salt=salt,
+            iterations=iterations,
+        )
+        SECRET_KEY = kdf.derive(password)
+        
+        # Set secure permissions on salt file if on Unix-like systems
+        if os.name == 'posix':
+            try:
+                os.chmod(salt_file, 0o600)  # Read/write for owner only
+            except Exception as e:
+                print(f"Warning: Could not set secure permissions on salt file: {e}")
+                
+        print("New encryption key derived successfully.")
+        
     except Exception as e:
-         print(f"FATAL: Could not save generated key to '{LOCAL_KEY_FILE}': {e}")
-         SECRET_KEY = None # Indicate key failure
+        print(f"FATAL: Could not save generated salt: {e}")
+        SECRET_KEY = None  # Indicate key failure
+
+
 
 SECRET_KEY = None
 load_or_generate_key() # Load or generate key on script start
@@ -330,7 +462,7 @@ def decrypt_file_stream(encrypted_chunks_iterator):
                 
             # Add incoming data to our buffer
             pending_encrypted_data += network_chunk
-            print(f"Received network chunk: {len(network_chunk)} bytes, buffer now: {len(pending_encrypted_data)} bytes")
+            # print(f"Received network chunk: {len(network_chunk)} bytes, buffer now: {len(pending_encrypted_data)} bytes")
             
             # Process any complete encrypted chunks in the buffer
             while len(pending_encrypted_data) > 12:  # Need at least IV + 1 byte of data
@@ -369,7 +501,7 @@ def decrypt_file_stream(encrypted_chunks_iterator):
                         
                         # If we got here, decryption succeeded
                         pending_encrypted_data = pending_encrypted_data[12+test_length:]
-                        print(f"Successfully decrypted chunk {chunk_index} (length: {test_length})")
+                        # print(f"Successfully decrypted chunk {chunk_index} (length: {test_length})")
                         chunk_index += 1
                         yield decrypted
                         success = True
@@ -380,7 +512,7 @@ def decrypt_file_stream(encrypted_chunks_iterator):
                 
                 # If we couldn't find a valid chunk, we need more data
                 if not success:
-                    print(f"Need more data to decrypt - buffer size: {len(pending_encrypted_data)} bytes")
+                    # print(f"Need more data to decrypt - buffer size: {len(pending_encrypted_data)} bytes")
                     break  # Break from while loop to get more network data
         
         # Process any remaining data after all network chunks received
@@ -393,7 +525,7 @@ def decrypt_file_stream(encrypted_chunks_iterator):
                 ciphertext = pending_encrypted_data[12:]
                 decrypted = aesgcm.decrypt(iv, ciphertext, None)
                 pending_encrypted_data = b''  # Clear the buffer
-                print(f"Successfully decrypted final chunk {chunk_index} (length: {len(ciphertext)})")
+                # print(f"Successfully decrypted final chunk {chunk_index} (length: {len(ciphertext)})")
                 chunk_index += 1
                 yield decrypted
                 break  # Should exit as buffer is now empty
@@ -874,7 +1006,7 @@ def do_download_file(file_uuid, save_dir="."):
     success = write_file_chunked(save_path, decrypted_stream_gen)
 
     if success:
-        print(f"File '{safe_original_filename}' downloaded and decrypted successfully.")
+        print(f"File '{safe_original_filename}' downloaded successfully.")
     else:
         print(f"File download or decryption failed for '{safe_original_filename}'.")
         # write_file_chunked should handle cleanup of partial file
