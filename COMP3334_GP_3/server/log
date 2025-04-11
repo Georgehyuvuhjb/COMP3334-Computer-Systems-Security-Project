@@ -1,0 +1,28 @@
+Timestamp,Username,Action,Details
+2025-04-11 16:30:31,SYSTEM,REGISTER,User test registered
+2025-04-11 16:30:39,SYSTEM,REGISTER,Admin test1 registered
+2025-04-11 16:30:45,test1,LOGIN_STAGE1,Password verification successful, OTP generated
+2025-04-11 16:30:51,test1,LOGIN_SUCCESS,OTP verification successful
+2025-04-11 16:30:55,test1,VIEW_LOGS,Admin viewed system logs
+2025-04-11 16:31:10,test1,VIEW_LOGS,Admin viewed system logs
+2025-04-11 16:31:36,test1,UPLOAD,File uploaded: COMP3334-Project [Rev. 1].pdf
+2025-04-11 16:31:44,test1,UPLOAD,File uploaded: Capstone Project Assignment Scheme for 2025-26.pdf
+2025-04-11 16:31:45,test1,LIST_FILES,Listed 2 own files and 0 shared files
+2025-04-11 16:31:47,test1,LIST_FILES,Listed 2 own files and 0 shared files
+2025-04-11 16:31:54,test1,LIST_FILES,Listed 2 own files and 0 shared files
+2025-04-11 16:31:57,test1,SHARE,Shared file Capstone Project Assignment Scheme for 2025-26.pdf with test (copy method)
+2025-04-11 16:32:05,test1,VIEW_LOGS,Admin viewed system logs
+2025-04-11 16:32:26,test,LOGIN_STAGE1,Password verification successful, OTP generated
+2025-04-11 16:32:29,test,LOGIN_SUCCESS,OTP verification successful
+2025-04-11 16:32:33,test,VIEW_LOGS_FAILED,Unauthorized access
+2025-04-11 16:32:41,test,LIST_FILES,Listed 0 own files and 1 shared files
+2025-04-11 16:32:47,test,LIST_FILES,Listed 0 own files and 1 shared files
+2025-04-11 16:32:48,test,DOWNLOAD,File downloaded: from_test1_Capstone Project Assignment Scheme for 2025-26.pdf
+2025-04-11 16:33:08,test,LOGIN_STAGE1,Password verification successful, OTP generated
+2025-04-11 16:33:12,test,PASSWORD_CHANGED,Password changed successfully
+2025-04-11 16:33:19,test,LOGIN_FAILED,Invalid password
+2025-04-11 16:33:24,test,LOGIN_FAILED,Invalid password
+2025-04-11 16:33:27,test,LOGIN_STAGE1,Password verification successful, OTP generated
+2025-04-11 16:33:31,test,LOGIN_SUCCESS,OTP verification successful
+2025-04-11 16:33:37,test,LOGIN_STAGE1,Password verification successful, OTP generated
+2025-04-11 16:33:39,test,PASSWORD_CHANGED,Password changed successfully
