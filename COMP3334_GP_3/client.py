@@ -62,21 +62,31 @@ class FileClient:
     
     def send_request(self, command: str, data: Dict, auth: Optional[Dict] = None) -> Dict:
         """Send a request to the server and get response"""
+        # Always verify connection is working before sending
+        try:
+            # Test if connection is still working by sending a small packet
+            if self.socket:
+                self.socket.sendall(b'')  # This will raise an exception if connection is broken
+        except (ConnectionError, OSError, BrokenPipeError):
+            # Connection is broken - close it and set to None to force reconnection
+            self.close_connection()
+        
+        # Now attempt to connect if needed
         if not self.socket:
             if not self.connect_to_server():
                 return {"status": "error", "message": "Failed to connect to server"}
         
-        # Prepare request message
-        request = {
-            "command": command,
-            "data": data
-        }
-        
-        # Add auth if provided
-        if auth:
-            request["auth"] = auth
-        
         try:
+            # Prepare request message
+            request = {
+                "command": command,
+                "data": data
+            }
+            
+            # Add auth if provided
+            if auth:
+                request["auth"] = auth
+            
             # Convert request to JSON and send
             request_json = json.dumps(request).encode('utf-8')
             
@@ -313,14 +323,8 @@ class FileClient:
         
         # Check if there was a connection error
         if response["status"] == "error":
-            if "connect" in response["message"].lower() or "connection" in response["message"].lower():
-                # This is a server connection error, not an authentication error
-                print("Server connection error. Please make sure the server is running.")
-                return False
-            else:
-                # This is likely an actual authentication error
-                print("Invalid username or password")
-                return False
+            print("Server connection error. Please make sure the server is running.")
+            return False
         
         # Continue with login process...
         server_salt = response["data"]["salt"]

@@ -36,3 +36,11 @@ Timestamp,Username,Action,Details
 2025-04-11 17:19:14,test1,LOGIN_SUCCESS,OTP verification successful
 2025-04-11 17:19:16,test1,LIST_FILES,Listed 2 own files and 0 shared files
 2025-04-11 17:19:21,test1,LIST_FILES,Listed 2 own files and 0 shared files
+2025-04-11 17:45:54,test,LOGIN_FAILED,Invalid password
+2025-04-11 17:46:05,test,LOGIN_STAGE1,Password verification successful, OTP generated
+2025-04-11 17:49:47,test,LOGIN_FAILED,Invalid password
+2025-04-11 17:50:09,test,LOGIN_FAILED,Invalid password
+2025-04-11 17:55:49,test,LOGIN_FAILED,Invalid password
+2025-04-11 17:56:25,test,LOGIN_FAILED,Invalid password
+2025-04-11 17:56:31,test,LOGIN_STAGE1,Password verification successful, OTP generated
+2025-04-11 17:56:37,test,LOGIN_SUCCESS,OTP verification successful
