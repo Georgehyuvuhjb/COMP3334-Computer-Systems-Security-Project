@@ -30,8 +30,8 @@ class FileServer:
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         
-        # 設置 socket 超時，使 accept() 定期返回
-        self.server_socket.settimeout(1.0)  # 1 秒超時
+        # Set socket timeout to make accept() return periodically
+        self.server_socket.settimeout(1.0)  # 1 second timeout
         
         try:
             self.server_socket.bind((self.host, self.port))
@@ -40,16 +40,16 @@ class FileServer:
             print(f"Server data directory: {self.server_dir.absolute()}")
             print("Press Ctrl+C to shutdown server")
             
-            # 變數控制伺服器運行狀態
+            # Variable to control server running state
             self.running = True
             
-            # 主伺服器循環
+            # Main server loop
             while self.running:
                 try:
                     client_socket, client_address = self.server_socket.accept()
                     print(f"New connection from {client_address[0]}:{client_address[1]}")
                     
-                    # 啟動新線程處理客戶端
+                    # Start a new thread to handle client
                     client_thread = threading.Thread(
                         target=self.handle_client,
                         args=(client_socket, client_address)
@@ -57,7 +57,7 @@ class FileServer:
                     client_thread.daemon = True
                     client_thread.start()
                 except socket.timeout:
-                    # 超時後繼續循環，允許檢查中斷信號
+                    # Continue loop after timeout to allow checking for interrupt signals
                     continue
                 except Exception as e:
                     print(f"Error accepting connection: {e}")

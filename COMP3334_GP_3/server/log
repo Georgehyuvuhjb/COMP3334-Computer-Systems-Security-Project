@@ -48,3 +48,16 @@ Timestamp,Username,Action,Details
 2025-04-11 18:12:56,test,LOGIN_STAGE1,Password verification successful, OTP generated
 2025-04-11 18:13:02,test,LOGIN_SUCCESS,OTP verification successful
 2025-04-11 18:13:04,test,VIEW_LOGS_FAILED,Unauthorized access
+2025-04-11 18:21:47,test,LOGIN_FAILED,Invalid password
+2025-04-11 18:21:52,test,LOGIN_STAGE1,Password verification successful, OTP generated
+2025-04-11 18:22:00,test,LOGIN_SUCCESS,OTP verification successful
+2025-04-11 18:23:19,test,LIST_FILES,Listed 0 own files and 1 shared files
+2025-04-11 18:26:46,test,LOGIN_STAGE1,Password verification successful, OTP generated
+2025-04-11 18:26:51,test,LOGIN_SUCCESS,OTP verification successful
+2025-04-11 18:26:54,test,LIST_FILES,Listed 0 own files and 1 shared files
+2025-04-11 18:27:04,test,VIEW_LOGS_FAILED,Unauthorized access
+2025-04-11 18:27:15,test,UPLOAD,File uploaded: Capstone Project Assignment Scheme for 2025-26.pdf
+2025-04-11 18:27:17,test,LIST_FILES,Listed 1 own files and 1 shared files
+2025-04-11 18:27:35,test,LIST_FILES,Listed 1 own files and 1 shared files
+2025-04-11 18:27:39,test,DELETE,File deleted: Capstone Project Assignment Scheme for 2025-26.pdf
+2025-04-11 18:27:45,test,LIST_FILES,Listed 0 own files and 1 shared files

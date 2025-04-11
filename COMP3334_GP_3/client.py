@@ -1123,8 +1123,10 @@ def main():
                 client.private_key = None
                 client.public_key = None
             elif choice == "0":
+                """
                 if client.username:
                     display_session_keys(client) #uncomment it for testing
+                """
                 print("Goodbye!")
                 break
             else:
