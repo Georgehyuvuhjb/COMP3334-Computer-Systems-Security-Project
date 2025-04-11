@@ -255,14 +255,14 @@ class FileClient:
         
         print(f"Password strength: {strength}")
         
-        # Generate keys
+        # Generate keys for the cryptosystem
         master_key = self.generate_master_key(password)
         sub_master_key = os.urandom(32)  # Randomly generate sub-master key
         
-        # Generate key pair
+        # Generate RSA key pair
         private_key, public_key = self.generate_keypair()
         
-        # Serialize keys
+        # Serialize keys to PEM format
         private_key_pem = private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
@@ -274,29 +274,23 @@ class FileClient:
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         ).decode()
         
-        # Encrypt keys
+        # Encrypt keys with master key
         encrypted_sub_master_key = self.encrypt_data(sub_master_key, master_key)
         encrypted_private_key = self.encrypt_data(private_key_pem, master_key)
         
-        # Get server salt
-        response = self.send_request("GET_SALT", {"username": username})
+        # Check if username already exists
+        check_response = self.send_request("CHECK_USERNAME", {"username": username})
+        if check_response.get("status") == "success" and check_response.get("data", {}).get("exists"):
+            print(f"Username '{username}' already exists")
+            return
         
-        if response["status"] == "success":
-            server_salt = response["data"]["salt"]
-        else:
-            # If user doesn't exist, server will return a new salt
-            server_salt = "NEW_USER_SALT"
+        # Generate new random server salt
+        server_salt = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
         
-        # Calculate password hash
+        # Calculate password hash with the new salt
         password_hash = hashlib.sha256((password + server_salt).encode()).hexdigest()
         
-        # salt
-        new_server_salt = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
-        
-        # hash(password+salt)
-        password_hash = hashlib.sha256((password + new_server_salt).encode()).hexdigest()
-        
-        # register request
+        # Send registration request to server
         response = self.send_request(
             "REGISTER", 
             {
@@ -306,7 +300,7 @@ class FileClient:
                 "encrypted_private_key": encrypted_private_key,
                 "public_key": public_key_pem,
                 "is_admin": is_admin,
-                "server_salt": new_server_salt
+                "server_salt": server_salt
             }
         )
         

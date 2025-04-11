@@ -44,3 +44,7 @@ Timestamp,Username,Action,Details
 2025-04-11 17:56:25,test,LOGIN_FAILED,Invalid password
 2025-04-11 17:56:31,test,LOGIN_STAGE1,Password verification successful, OTP generated
 2025-04-11 17:56:37,test,LOGIN_SUCCESS,OTP verification successful
+2025-04-11 18:12:51,test,LOGIN_FAILED,Invalid password
+2025-04-11 18:12:56,test,LOGIN_STAGE1,Password verification successful, OTP generated
+2025-04-11 18:13:02,test,LOGIN_SUCCESS,OTP verification successful
+2025-04-11 18:13:04,test,VIEW_LOGS_FAILED,Unauthorized access
