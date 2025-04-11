@@ -30,30 +30,50 @@ class FileServer:
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         
+        # 設置 socket 超時，使 accept() 定期返回
+        self.server_socket.settimeout(1.0)  # 1 秒超時
+        
         try:
             self.server_socket.bind((self.host, self.port))
             self.server_socket.listen(5)
             print(f"Server started on {self.host}:{self.port}")
             print(f"Server data directory: {self.server_dir.absolute()}")
+            print("Press Ctrl+C to shutdown server")
             
-            # Main server loop
-            while True:
-                client_socket, client_address = self.server_socket.accept()
-                print(f"New connection from {client_address[0]}:{client_address[1]}")
-                
-                # Start a new thread to handle client
-                client_thread = threading.Thread(
-                    target=self.handle_client,
-                    args=(client_socket, client_address)
-                )
-                client_thread.daemon = True
-                client_thread.start()
-                
+            # 變數控制伺服器運行狀態
+            self.running = True
+            
+            # 主伺服器循環
+            while self.running:
+                try:
+                    client_socket, client_address = self.server_socket.accept()
+                    print(f"New connection from {client_address[0]}:{client_address[1]}")
+                    
+                    # 啟動新線程處理客戶端
+                    client_thread = threading.Thread(
+                        target=self.handle_client,
+                        args=(client_socket, client_address)
+                    )
+                    client_thread.daemon = True
+                    client_thread.start()
+                except socket.timeout:
+                    # 超時後繼續循環，允許檢查中斷信號
+                    continue
+                except Exception as e:
+                    print(f"Error accepting connection: {e}")
+                    
         except KeyboardInterrupt:
-            print("Server shutting down...")
+            print("\nKeyboard interrupt received, shutting down...")
         finally:
-            if self.server_socket:
-                self.server_socket.close()
+            self.shutdown()
+        
+    def shutdown(self):
+        """Gracefully shutdown the server"""
+        self.running = False
+        print("Closing server socket...")
+        if self.server_socket:
+            self.server_socket.close()
+        print("Server shutdown complete.")
     
     def handle_client(self, client_socket, address):
         """Handle communication with a client"""
