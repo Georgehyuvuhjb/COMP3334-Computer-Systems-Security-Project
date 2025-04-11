@@ -26,3 +26,13 @@ Timestamp,Username,Action,Details
 2025-04-11 16:33:31,test,LOGIN_SUCCESS,OTP verification successful
 2025-04-11 16:33:37,test,LOGIN_STAGE1,Password verification successful, OTP generated
 2025-04-11 16:33:39,test,PASSWORD_CHANGED,Password changed successfully
+2025-04-11 17:09:19,test,LOGIN_STAGE1,Password verification successful, OTP generated
+2025-04-11 17:09:25,test,LOGIN_SUCCESS,OTP verification successful
+2025-04-11 17:09:29,test,VIEW_LOGS_FAILED,Unauthorized access
+2025-04-11 17:16:53,test,LOGIN_STAGE1,Password verification successful, OTP generated
+2025-04-11 17:16:58,test,LOGIN_SUCCESS,OTP verification successful
+2025-04-11 17:16:59,test,LIST_FILES,Listed 0 own files and 1 shared files
+2025-04-11 17:19:09,test1,LOGIN_STAGE1,Password verification successful, OTP generated
+2025-04-11 17:19:14,test1,LOGIN_SUCCESS,OTP verification successful
+2025-04-11 17:19:16,test1,LIST_FILES,Listed 2 own files and 0 shared files
+2025-04-11 17:19:21,test1,LIST_FILES,Listed 2 own files and 0 shared files

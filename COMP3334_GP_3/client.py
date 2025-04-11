@@ -311,10 +311,18 @@ class FileClient:
         # Get server salt
         response = self.send_request("GET_SALT", {"username": username})
         
-        if response["status"] != "success":
-            print("Invalid username or password")
-            return False
+        # Check if there was a connection error
+        if response["status"] == "error":
+            if "connect" in response["message"].lower() or "connection" in response["message"].lower():
+                # This is a server connection error, not an authentication error
+                print("Server connection error. Please make sure the server is running.")
+                return False
+            else:
+                # This is likely an actual authentication error
+                print("Invalid username or password")
+                return False
         
+        # Continue with login process...
         server_salt = response["data"]["salt"]
         
         # Calculate password hash
@@ -329,9 +337,14 @@ class FileClient:
             }
         )
         
-        if response["status"] != "success":
-            print("Invalid username or password")
-            return False
+        # Check again for connection errors
+        if response["status"] == "error":
+            if "connect" in response["message"].lower() or "connection" in response["message"].lower():
+                print("Server connection error. Please make sure the server is running.")
+                return False
+            else:
+                print("Invalid username or password")
+                return False
         
         otp = response["data"]["otp"]
         
@@ -350,9 +363,14 @@ class FileClient:
             }
         )
         
-        if response["status"] != "success":
-            print("Invalid OTP or OTP expired")
-            return False
+        # Check again for connection errors
+        if response["status"] == "error":
+            if "connect" in response["message"].lower() or "connection" in response["message"].lower():
+                print("Server connection error. Please make sure the server is running.")
+                return False
+            else:
+                print("Invalid OTP or OTP expired")
+                return False
         
         user_keys = response["data"]
         
@@ -966,6 +984,61 @@ class FileClient:
             print(response["message"])
         except Exception as e:
             print(f"Error while changing password: {e}")
+            
+def display_session_keys(client):
+    """Display plaintext keys in memory for testing"""
+    if not client.username:
+        print("Not logged in, no keys to display")
+        return
+    
+    print("\n===== Keys in Memory =====")
+    print(f"User: {client.username}")
+    
+    # Display Sub-Master Key
+    if client.sub_master_key:
+        print("\n[Sub-Master Key]")
+        print(f"Type: {type(client.sub_master_key)}")
+        print(f"Length: {len(client.sub_master_key)} bytes")
+        print(f"Hexadecimal: {client.sub_master_key.hex()}")
+    
+    # Display Private Key information
+    if client.private_key:
+        print("\n[Private Key]")
+        private_numbers = client.private_key.private_numbers()
+        print(f"Modulus (n): {private_numbers.public_numbers.n}")
+        print(f"Public exponent (e): {private_numbers.public_numbers.e}")
+        d_str = str(private_numbers.d)
+        print(f"Private exponent (d) length: {len(d_str)} digits")
+        print(f"Private exponent (d) first 10 digits: {d_str[:10]}...")
+    
+    # Display Public Key information
+    if client.public_key:
+        print("\n[Public Key]")
+        public_numbers = client.public_key.public_numbers()
+        print(f"Modulus (n): {public_numbers.n}")
+        print(f"Public exponent (e): {public_numbers.e}")
+    
+    # Display a real file key for a random file if available
+    if client.sub_master_key:
+        # Get user's files
+        own_files, _ = client.list_files()
+        
+        if own_files:
+            # Select a random file from user's files
+            import random
+            random_file = random.choice(own_files)
+            
+            # Generate file key for this actual file
+            file_key = client.generate_file_key(client.sub_master_key, random_file)
+            
+            print("\n[Real File Key]")
+            print(f"File: {random_file}")
+            print(f"Key: {file_key.hex()}")
+        else:
+            print("\n[File Key]")
+            print("No files available to display key")
+
+    print("===== End of Keys Display =====\n")
 
 def show_menu(client) -> None:
     """Display menu based on login status"""
@@ -980,7 +1053,7 @@ def show_menu(client) -> None:
     else:
         # Display options for logged in users
         print(f"Logged in as: {client.username}")
-        print("1. Upload File")
+        print("1. Upload/Edit File")
         print("2. Download File")
         print("3. Delete File")
         print("4. Share File")
@@ -1049,6 +1122,8 @@ def main():
                 client.private_key = None
                 client.public_key = None
             elif choice == "0":
+                if client.username:
+                    display_session_keys(client) #uncomment it for testing
                 print("Goodbye!")
                 break
             else:
