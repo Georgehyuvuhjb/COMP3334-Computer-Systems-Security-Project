@@ -317,7 +317,10 @@ class FileClient:
         
         # Check if there was a connection error
         if response["status"] == "error":
-            print("Server connection error. Please make sure the server is running.")
+            if response["message"]=="User not found":
+                print("User does not exists")
+            else:
+                print("Server connection error. Please make sure the server is running.")
             return False
         
         # Continue with login process...
