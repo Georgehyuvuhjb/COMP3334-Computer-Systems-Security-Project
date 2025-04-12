@@ -277,13 +277,6 @@ class FileServer:
             # If users.json doesn't exist, create an empty dictionary
             users = {}
         
-        # If registering as admin but admin already exists, verify
-        if is_admin:
-            admin_exists = any(user.get("is_admin", False) for user in users.values())
-            if admin_exists:
-                # In a real system, you'd verify the admin password here
-                pass
-        
         # Store user data
         users[username] = {
             "password_hash": password_hash,
