@@ -118,7 +118,7 @@ class FileClient:
             # Parse response JSON
             response = json.loads(response_data.decode('utf-8'))
             return response
-            
+
         except ConnectionError as e:
             print(f"Connection error: {e}")
             self.close_connection()  # Close the broken connection
@@ -226,6 +226,50 @@ class FileClient:
         """Get current timestamp"""
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
+    def show_qr_code(self, qr_base64: str) -> None:
+        """Display QR code for Google Authenticator setup"""
+        try:
+            import tkinter as tk
+            from PIL import Image, ImageTk
+            import io
+            
+            # Decode base64 QR code
+            qr_data = base64.b64decode(qr_base64)
+            qr_image = Image.open(io.BytesIO(qr_data))
+            
+            # Create Tkinter window
+            root = tk.Tk()
+            root.title("Google Authenticator Setup")
+            
+            # Display instructions
+            label = tk.Label(root, text="Scan this QR code with Google Authenticator app", font=("Arial", 12))
+            label.pack(padx=20, pady=10)
+            
+            # Display QR code
+            tk_image = ImageTk.PhotoImage(qr_image)
+            qr_label = tk.Label(root, image=tk_image)
+            qr_label.image = tk_image  # Keep a reference
+            qr_label.pack(padx=20, pady=20)
+            
+            # Add close button
+            close_button = tk.Button(root, text="Close", command=root.destroy)
+            close_button.pack(pady=10)
+            
+            # Center window on screen
+            root.update_idletasks()
+            width = root.winfo_width()
+            height = root.winfo_height()
+            x = (root.winfo_screenwidth() // 2) - (width // 2)
+            y = (root.winfo_screenheight() // 2) - (height // 2)
+            root.geometry('{}x{}+{}+{}'.format(width, height, x, y))
+            
+            root.mainloop()
+            
+        except ImportError:
+            print("Cannot display QR code: Required libraries not available")
+            print("Please manually add this secret key to your authenticator app:")
+            # The secret key is also returned separately in the response
+
     def register(self, is_admin=False) -> None:
         """User registration"""
         print("\n=== User Registration ===")
@@ -305,6 +349,20 @@ class FileClient:
         )
         
         print(response["message"])
+        
+        # Check if we received TOTP setup data
+        if response["status"] == "success" and "data" in response:
+            if "totp_qr" in response["data"]:
+                print("\n=== Google Authenticator Setup ===")
+                print("Please scan the QR code with your Google Authenticator app")
+                
+                # Show QR code window
+                self.show_qr_code(response["data"]["totp_qr"])
+                
+                # Also show the secret for manual entry
+                print("If you cannot scan the QR code, manually add this secret key:")
+                print(response["data"]["totp_secret"])
+                print("===============================")
     
     def login(self) -> bool:
         """User login"""
@@ -347,20 +405,15 @@ class FileClient:
                 print("Invalid username or password")
                 return False
         
-        hotp = response["data"]["otp"]
+        # Now that password is verified, ask for Google Authenticator code
+        totp_code = input("Enter the 6-digit code from your authenticator app: ")
         
-        # Display HOTP window
-        self.show_otp_window(hotp)
-        
-        # Input HOTP
-        entered_hotp = input("Enter the HOTP authentication code shown in the popup: ")
-        
-        # Second stage login: HOTP verification
+        # Second stage login: TOTP verification
         response = self.send_request(
             "VERIFY_OTP", 
             {
                 "username": username,
-                "otp": entered_hotp
+                "otp": totp_code
             }
         )
         
@@ -370,7 +423,7 @@ class FileClient:
                 print("Server connection error. Please make sure the server is running.")
                 return False
             else:
-                print("Invalid HOTP code or code expired")
+                print("Invalid authentication code")
                 return False
         
         user_keys = response["data"]
@@ -413,34 +466,6 @@ class FileClient:
         except Exception as e:
             print(f"Error decrypting keys: {e}")
             return False
-    
-    def show_otp_window(self, hotp: str) -> None:
-        """Display HOTP window (non-blocking)"""
-        
-        def show_window():
-            root = tk.Tk()
-            root.title("HMAC-Based One-Time Password Authentication")
-            root.geometry("350x180")
-            
-            frame = tk.Frame(root, padx=20, pady=20)
-            frame.pack(fill=tk.BOTH, expand=True)
-            
-            tk.Label(frame, text="Your HOTP Authentication Code:", font=("Arial", 12)).pack()
-            tk.Label(frame, text=hotp, font=("Arial", 18, "bold")).pack(pady=10)
-            tk.Label(frame, text="This is a one-time use code", font=("Arial", 10)).pack()
-            tk.Label(frame, text="The code will expire in 60 seconds", font=("Arial", 10)).pack()
-            
-            # Auto-close window after 60 seconds
-            root.after(60000, root.destroy)
-            root.mainloop()
-        
-        # Run window in a new thread
-        otp_thread = threading.Thread(target=show_window)
-        otp_thread.daemon = True  # Set as daemon thread so it terminates when main program exits
-        otp_thread.start()
-        
-        # Main thread continues running
-        print("HOTP authentication code displayed. You can enter the code below when ready.")
     
     def upload_file(self) -> None:
         """Upload file"""
