@@ -1,6 +1,3 @@
-import pyotp
-import qrcode
-import io
 import os
 import json
 import socket
@@ -282,25 +279,9 @@ class FileServer:
             # If users.json doesn't exist, create an empty dictionary
             users = {}
         
-        # Generate TOTP secret for Google Authenticator
-        totp_secret = pyotp.random_base32()
-        
-        # Create the otpauth URL for QR code
-        totp_url = pyotp.totp.TOTP(totp_secret).provisioning_uri(
-            name=username,
-            issuer_name="SecureFileSystem"
-        )
-        
-        # Generate QR code
-        qr = qrcode.QRCode(version=1, box_size=10, border=5)
-        qr.add_data(totp_url)
-        qr.make(fit=True)
-        img = qr.make_image(fill='black', back_color='white')
-        
-        # Convert QR code to base64 string
-        buffer = io.BytesIO()
-        img.save(buffer, format="PNG")
-        qr_base64 = base64.b64encode(buffer.getvalue()).decode()
+        # Generate HOTP secret for the user
+        hotp_secret = base64.b32encode(os.urandom(20)).decode('utf-8')
+        hotp_counter = 0  # Initial counter
         
         # Store user data
         users[username] = {
@@ -308,7 +289,8 @@ class FileServer:
             "server_salt": server_salt,
             "public_key": public_key,
             "is_admin": is_admin,
-            "totp_secret": totp_secret
+            "hotp_secret": hotp_secret,
+            "hotp_counter": hotp_counter
         }
         
         with open(users_file, "w") as f:
@@ -344,13 +326,9 @@ class FileServer:
         
         return {
             "status": "success",
-            "message": f"{'Admin' if is_admin else 'User'} registered successfully",
-            "data": {
-                "totp_qr": qr_base64,
-                "totp_secret": totp_secret
-            }
+            "message": f"{'Admin' if is_admin else 'User'} registered successfully"
         }
-
+    
     def handle_login(self, data, auth):
         """Handle login request (first stage)"""
         username = data.get("username", "")
@@ -387,28 +365,50 @@ class FileServer:
                 "message": "Invalid username or password"
             }
         
-        # Log action
-        self.log_action(username, "LOGIN_STAGE1", "Password verification successful, waiting for TOTP")
+        # Get HOTP secret and counter
+        hotp_secret = users[username]["hotp_secret"]
+        hotp_counter = users[username]["hotp_counter"]
         
-        # Password verified, now client should provide TOTP code
+        # Generate HOTP
+        otp = self.generate_hotp(hotp_secret, hotp_counter)
+        
+        # Store OTP expiry time in temporary file
+        expiry_time = time.time() + 60  # Expire after 60 seconds
+        otp_data = {"expiry_time": expiry_time}
+        otp_file = self.server_dir / f"otp_{username}.json"
+        with open(otp_file, "w") as f:
+            json.dump(otp_data, f)
+        
+        # Log action
+        self.log_action(username, "LOGIN_STAGE1", "Password verification successful, HOTP generated")
+        
         return {
             "status": "success",
-            "message": "Password verified, please enter authenticator code",
+            "message": "Password verified, HOTP code generated",
             "data": {
-                "requires_totp": True
+                "otp": otp,
+                "expires_in": 60
             }
-        }   
-
+        }    
+    
     def handle_verify_otp(self, data, auth):
-        """Handle TOTP verification (second stage login)"""
+        """Handle OTP verification (second stage login)"""
         username = data.get("username", "")
-        totp_code = data.get("otp", "")
+        otp = data.get("otp", "")
         
         # Validate required fields
-        if not all([username, totp_code]):
+        if not all([username, otp]):
             return {
                 "status": "error",
-                "message": "Missing username or authentication code"
+                "message": "Missing username or OTP"
+            }
+        
+        # Check if OTP verification is in progress (file exists)
+        otp_file = self.server_dir / f"otp_{username}.json"
+        if not otp_file.exists():
+            return {
+                "status": "error",
+                "message": "OTP expired or not found"
             }
         
         # Read users data
@@ -422,18 +422,42 @@ class FileServer:
                 "message": "User not found"
             }
         
-        # Get TOTP secret
-        totp_secret = users[username]["totp_secret"]
+        # Get HOTP data
+        hotp_secret = users[username]["hotp_secret"]
+        hotp_counter = users[username]["hotp_counter"]
         
         try:
-            # Verify TOTP code
-            totp = pyotp.TOTP(totp_secret)
-            if not totp.verify(totp_code):
-                self.log_action(username, "LOGIN_FAILED", "Invalid TOTP code")
+            # Read OTP expiry data
+            with open(otp_file, "r") as f:
+                otp_data = json.load(f)
+            
+            # Delete OTP file regardless of verification success
+            otp_file.unlink()
+            
+            # Check if OTP is expired
+            if time.time() > otp_data["expiry_time"]:
+                self.log_action(username, "LOGIN_FAILED", "OTP expired")
                 return {
                     "status": "error",
-                    "message": "Invalid authentication code"
+                    "message": "OTP expired"
                 }
+            
+            # Generate and verify HOTP
+            expected_otp = self.generate_hotp(hotp_secret, hotp_counter)
+            
+            if otp != expected_otp:
+                self.log_action(username, "LOGIN_FAILED", "Invalid OTP")
+                return {
+                    "status": "error",
+                    "message": "Invalid OTP"
+                }
+            
+            # Update counter for next use
+            users[username]["hotp_counter"] = hotp_counter + 1
+            
+            # Save updated counter
+            with open(users_file, "w") as f:
+                json.dump(users, f)
             
             # Get user's encrypted keys
             user_dir = self.server_dir / username
@@ -457,7 +481,7 @@ class FileServer:
                 user_keys["public_key"] = f.read()
             
             # Log action
-            self.log_action(username, "LOGIN_SUCCESS", "TOTP verification successful")
+            self.log_action(username, "LOGIN_SUCCESS", "HOTP verification successful")
             
             return {
                 "status": "success",
@@ -466,10 +490,10 @@ class FileServer:
             }
                 
         except Exception as e:
-            self.log_action(username, "LOGIN_FAILED", f"TOTP verification error: {e}")
+            self.log_action(username, "LOGIN_FAILED", f"HOTP verification error: {e}")
             return {
                 "status": "error",
-                "message": f"Error during authentication: {e}"
+                "message": f"Error during HOTP verification: {e}"
             }
 
     def handle_upload(self, data, auth):
@@ -980,6 +1004,27 @@ class FileServer:
                 "public_key": public_key
             }
         }
+    
+    def generate_hotp(self, secret: str, counter: int) -> str:
+        """Generate HOTP code based on RFC 4226"""
+        # Decode base32 secret
+        key = base64.b32decode(secret)
+        
+        # Convert counter to 8-byte big-endian
+        counter_bytes = struct.pack('>Q', counter)
+        
+        # Calculate HMAC-SHA1
+        h = hmac.new(key, counter_bytes, 'sha1').digest()
+        
+        # Dynamic truncation
+        offset = h[-1] & 0x0f
+        binary = ((h[offset] & 0x7f) << 24 |
+                (h[offset + 1] & 0xff) << 16 |
+                (h[offset + 2] & 0xff) << 8 |
+                (h[offset + 3] & 0xff))
+        
+        # Generate 6-digit OTP
+        return str(binary % 10**6).zfill(6)
 
     def get_user_public_key(self, username: str) -> Optional[str]:
         """Get user's public key"""
