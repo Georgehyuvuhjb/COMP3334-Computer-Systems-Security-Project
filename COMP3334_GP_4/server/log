@@ -1,0 +1,5 @@
+Timestamp,Username,Action,Details
+2025-04-13 17:45:13,SYSTEM,REGISTER,User test registered
+2025-04-13 17:45:16,SYSTEM,REGISTER,Admin test1 registered
+2025-04-13 17:45:21,test1,LOGIN_STAGE1,Password verification successful, HOTP generated
+2025-04-13 17:45:28,test1,LOGIN_SUCCESS,HOTP verification successful
