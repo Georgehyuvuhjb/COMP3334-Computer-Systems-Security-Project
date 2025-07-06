@@ -1,0 +1,24 @@
+{
+  "name": "Hero",
+  "character_class": "warrior",
+  "level": 1,
+  "experience": 0,
+  "health": 100,
+  "max_health": 100,
+  "mana": 50,
+  "max_mana": 50,
+  "gold": 100,
+  "location": "village",
+  "stats": {
+    "strength": 15,
+    "magic": 5,
+    "defense": 12,
+    "agility": 8
+  },
+  "inventory": [
+    "Rusty Sword",
+    "Health Potion"
+  ],
+  "quests": [],
+  "completed_quests": []
+}
